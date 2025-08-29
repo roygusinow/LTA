@@ -1,3 +1,5 @@
 run_simulation_module.jl
 fed_testing.jl
+outputs
 .vscode
+.venv

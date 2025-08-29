@@ -249,8 +249,6 @@ function create_sim_mod_data(
         time_labels     = kwargs[:labels],
     )
 
-    # return observations, covariate_df
-
     sim_output = create_data_sim_params(
         observations, covariate_df;
         kwargs...

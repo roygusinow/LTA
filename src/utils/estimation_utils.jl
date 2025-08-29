@@ -1,4 +1,3 @@
-# using LatinHypercubeSampling, Accessors, Optim, LineSearches, Dates
 using LatinHypercubeSampling, Accessors, Optim, LineSearches
 
 function unpack(sim_output::SimulationOutput)
@@ -9,6 +8,7 @@ function unpack(sim_output::SimulationOutput)
 	return sim_params, sim_hyper
 end
 function unpack(est_output::EstimationOutput)
+	# unpack the simulation output
 	sim_output = est_output.sim_output
 	sim_params = sim_output.sim_params
 	sim_hyper = sim_params.sim_hyper
@@ -16,11 +16,14 @@ function unpack(est_output::EstimationOutput)
 	return sim_output, sim_params, sim_hyper
 end
 
+"""
+Convert the model params to the parameter vector.
+"""
 function model_params_2_param_vec(
 	model_params::NamedTuple;
 	ini_ref_state = 1, tr_ref_state = 1
 )
-	# convert model params to a parameter vector
+	# convert model params to a parameter vector via concatenation
 
 	# remove reference vector
 	beta_initial = model_params.beta_initial[1:end .!= ini_ref_state, :]
@@ -48,6 +51,9 @@ function model_params_2_param_vec(
 	return out
 end
 
+"""
+Convert the paramter vector back to model params.
+"""
 function param_vec_2_model_params(
 	params_vec::Vector{<:Real};
 	n_states::Int64,
@@ -55,7 +61,7 @@ function param_vec_2_model_params(
 	covariate_tup::NamedTuple,
 	ini_ref_state = 1, tr_ref_state = 1
 )
-
+	# determine the dimensions of each param set
 	set_k_from_rho_initial = length(covariate_tup[:initial]) == 0 ? 1 : 2
 	set_k_from_rho_trans = length(covariate_tup[:trans]) == 0 ? 1 : 2
 
@@ -78,6 +84,7 @@ function param_vec_2_model_params(
 	rho_initial = reshape(params_vec[idx:idx+l_rho_initial-1], dims_rho_initial); idx += l_rho_initial
 	rho_trans = reshape(params_vec[idx:idx+l_rho_trans-1], dims_rho_trans); idx += l_rho_trans
 
+	# construct emissions
 	emissions = NamedTuple()
 	if haskey(n_obs_tup, :bernoulli)
 		dims_beta_bern = (n_states, length(covariate_tup[:em]) + 1, n_obs_tup.bernoulli)
@@ -98,23 +105,6 @@ function param_vec_2_model_params(
 		emissions = (; emissions..., beta_gaussian = beta_gaussian)
 	end
 
-	# beta_bernoulli = reshape(params_vec[idx:idx+l_bern-1], dims_beta_bern); idx += l_bern
-	# beta_gaussian_means = reshape(params_vec[idx:idx+l_gauss-1], dims_beta_gauss_means); idx += l_gauss
-	# beta_gaussian_stds = reshape(params_vec[idx:idx+l_gauss-1], dims_beta_gauss_means); idx += l_gauss
-
-	# emissions = NamedTuple()
-	# for dist in keys(n_obs_tup)
-	# 	if dist == :bernoulli
-	# 		emissions = (; emissions..., beta_bernoulli = beta_bernoulli)
-	# 	elseif dist == :gaussian
-	# 		beta_gaussian = (
-	# 			means = beta_gaussian_means,
-	# 			stds = beta_gaussian_stds
-	# 		)	
-	# 		emissions = (; emissions..., beta_gaussian = beta_gaussian)
-	# 	end
-	# end
-
 	model_params = (
 		beta_initial = beta_initial,
 		beta_transition = beta_transition,
@@ -126,6 +116,9 @@ function param_vec_2_model_params(
 	return model_params
 end
 
+"""
+Objective function for optimisation
+"""
 function objective_func(
 	params_vec::Vector{<:Real};
 	sim_output::SimulationOutput,
@@ -173,7 +166,9 @@ function objective_func(
 	return penalised_lkl
 end
 
-# run est module
+"""
+Run the estimation of the model usng the data
+"""
 function run_estimation(
 	sim_output::SimulationOutput;
 	est_seed = 1,
@@ -239,7 +234,7 @@ function run_estimation(
 		covariate_tup = sim_hyper.covariate_tup
 	)
 
-	# # get hessian
+	# get hessian
 	if calculate_hessian
 		print("\nGetting Hessian\n")
 		flush(stdout)
@@ -258,20 +253,15 @@ function run_estimation(
 		covariate_tup = sim_hyper.covariate_tup
 	)
 
-	# # construct results
+	# construct results
 	est_output = EstimationOutput(
 		sim_output = sim_output,
 		est_seed = est_seed,
 		lambda = lambda, 
-
-		# true_parameter_vec = true_parameter_vec,
 		true_log_lkl = true_log_lkl, 
-
 		starting_model_params = starting_model_params,
 		fitted_model_params = fitted_model_params,
 
-		# starting_params_vec = starting_params_vec,
-		# fitted_params_vec = Optim.minimizer.(opt_list),
 		fitted_log_lkl_list = Optim.minimum.(opt_list),
 		se_fitted_model_params = se_fitted_model_params,
 
@@ -397,7 +387,6 @@ function optimise_with_bfgs(
 		linesearch = LineSearches.HagerZhang()),
 )
 	# run optimisation with grad descent config
-
 	opt = optimize(
 		obj_func,
 		starting_params,
@@ -409,6 +398,9 @@ function optimise_with_bfgs(
 	return opt
 end
 
+"""
+Make the starting parameters using kmeans for gaussian params if needed
+"""
 function generate_starting_params_vec(
 	sim_output::SimulationOutput;
 	n_starts::Int64 = 1,
@@ -443,6 +435,9 @@ function generate_starting_params_vec(
 	return starting_params_vec
 end
 
+"""
+K means starting value estimation and replacement
+"""
 function replace_gauss_params_with_kmeans(
 	sim_output::SimulationOutput,
 	param_vec::Vector{Float64};
@@ -562,11 +557,7 @@ function lkl_func(;
 		model_params = model_params,
 		sim_output = sim_output,
 	)
-	# log_sample_contribution = sum_alpha_across_states(alpha[:, :, end]) # using the last timepoint
 	log_sample_contribution = sum_alpha_across_states(alpha[:, end, :]) # using the last timepoint
-	# log_sample_contribution = logsumexp_over_states_at_last_time(alpha)
-	
-	# neg_log_lkl = -sum(log_sample_contribution .+ log.(lkl_weights)) # weight it in log space
 	neg_log_lkl = -sum(log_sample_contribution) # weight it in log space
 
 	return neg_log_lkl
@@ -596,13 +587,19 @@ function populate_forward_threads(;
 	end
 
 	tasks = map(sample_chunks_idx) do chunk_idx
+
+		@views begin
+            bern = bern_cond ? sim_output.observations.bernoulli_observations[chunk_idx, :, :] : nothing
+            gauss = gauss_cond ? sim_output.observations.gaussian_observations[chunk_idx, :, :] : nothing
+            covs = sim_params.covariate_mat[chunk_idx, :]
+        end
+
 		Threads.@spawn populate_forward(;
 			model_params = model_params,
 
-			bernoulli_observations = bern_cond ? sim_output.observations.bernoulli_observations[chunk_idx, :, :] : nothing,
-			gaussian_observations = gauss_cond ? sim_output.observations.gaussian_observations[chunk_idx, :, :] : nothing,
-
-			covariate_mat = sim_params.covariate_mat[chunk_idx, :],
+			bernoulli_observations = bern,
+			gaussian_observations = gauss,
+			covariate_mat = covs,
 			covariate_idx = covariate_idx
 		)
 	end
@@ -610,9 +607,16 @@ function populate_forward_threads(;
 	alpha_chunks = fetch.(tasks)
 
 	# recombine
-	alpha = alpha_chunks[1]
-	for i in 2:length(alpha_chunks)
-		alpha = cat(alpha, alpha_chunks[i], dims = 1)
+	N = sum(size(ch,1) for ch in alpha_chunks)
+	T = size(alpha_chunks[1], 2)
+	I = size(alpha_chunks[1], 3)
+
+	alpha = similar(alpha_chunks[1], N, T, I)
+	offset = 1
+	for ch in alpha_chunks
+		len = size(ch, 1)
+		@views alpha[offset:offset+len-1, :, :] .= ch
+		offset += len
 	end
 
 	return alpha
@@ -626,12 +630,9 @@ function precompute_transition(
 
 	# precompute the transition matrix of each patient
 	N = size(covariate_mat, 1)
-	# I = size(beta_transition, 1) + 1
 	I = size(beta_transition, 3)
 	log_transition_tensor = zeros(eltype(beta_transition), N, I, I)
 	for n in 1:N
-		# log_transition_tensor[n, :, :] .= get_transition_mat(beta_transition, patient_mat[n, :])
-		# log_transition_tensor[n, :, :] .= get_rho_gamma_2_transition_mat(gamma_transition, rho_param, patient_mat[n, :])
 		log_transition_tensor[n, :, :] .= get_rho_beta_transition_mat(beta_transition, rho_param, covariate_mat[n, :])
 	end
 	log_transition_tensor = log.(log_transition_tensor)
@@ -640,10 +641,10 @@ end
 
 function populate_forward(;
 	model_params::NamedTuple,
-	bernoulli_observations = nothing,
-	gaussian_observations = nothing,
-	covariate_mat::Matrix{Float64},
-	covariate_idx::NamedTuple
+    bernoulli_observations::Union{AbstractArray{Int64},Nothing}=nothing,
+    gaussian_observations::Union{AbstractArray{Float64},Nothing}=nothing,
+    covariate_mat::AbstractMatrix{Float64},
+    covariate_idx::NamedTuple
 )
 
 	# precompute transition and emission mats (for speed..)
@@ -655,11 +656,6 @@ function populate_forward(;
 	
 	using_bern = haskey(model_params.emissions, :beta_bernoulli)
 	using_gauss = haskey(model_params.emissions, :beta_gaussian)
-
-	# bernoulli_probs_tensor = precompute_emission(
-	# 	model_params.emissions.beta_bernoulli,
-	# 	covariate_mat[:, covariate_idx[:em]],
-	# )
 
 	# emission currently cant handle covariates
 	bernoulli_probs = using_bern ? get_bernoulli_probs(model_params.emissions.beta_bernoulli, covariate_mat[1, covariate_idx[:em]]) : nothing
@@ -719,7 +715,7 @@ function populate_forward(;
 					state_no = i,
 					log_state_probs = alpha[n, t-1, :],
 					log_transition_mat = log_transition_tensor[n, :, :],
-					n_states = I,
+					# n_states = I,
 				)
 
 				# observation
@@ -747,7 +743,7 @@ function get_probs_from_observable(;
 	true_gaussian_emission::Union{NamedTuple, Nothing}
 )
 	# get unormalised vector fof proabbility latent states, using observables but NOT state probs
-	log_symp_contr = 0
+	log_symp_contr = 0.0
 
 	if !isnothing(bernoulli_obs_vec)
 		# bernoulli
@@ -863,28 +859,21 @@ function get_pdf_norm(
 	end
 
 	# handle low variance
-	val = maximum([val, 1e-6])
+	val = max(val, 1e-6)
 
 	return val
 end
 
 function log_space_transition_state(;
 	state_no::Int64,
-	log_state_probs::Vector{<:Real},
-	log_transition_mat::Matrix{<:Real},
-	n_states = n_states,
+	# log_state_probs::Vector{<:Real},
+	# log_transition_mat::Matrix{<:Real},
+	log_state_probs::AbstractVector,
+    log_transition_mat::AbstractMatrix,
+	# n_states::Int64,
 )
-	# move one step in time, but in log space
-	# exp_next_prob = 0
-	# for from_state_j in 1:n_states
-	# 	exp_next_prob = exp_next_prob + exp(log_transition_mat[from_state_j, state_no] + log_state_probs[from_state_j])
-	# end
 
-	# log_next_probs = log(exp_next_prob)
-
-	# return log_next_probs
-
-	v = log_transition_mat[:, state_no] .+ log_state_probs
+	v = @views log_transition_mat[:, state_no] .+ log_state_probs
     m = maximum(v)
     return m + log(sum(exp.(v .- m)))
 end
@@ -969,4 +958,8 @@ function get_se(
     end
 
     return std_params
+end
+
+function temp_func()
+	print("Working")
 end

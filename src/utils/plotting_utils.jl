@@ -516,56 +516,204 @@ function p_values(estimates, std_errs)
 end
 
 # model evaluations
-function run_simulation_from_estimation(
-	est_output::EstimationOutput;
-	simulation_seed = 1,
-	T = 5,
-	type = "best_fitted",
+# function run_simulation_from_estimation(
+# 	est_output::EstimationOutput;
+# 	simulation_seed = 1,
+# 	T = 5,
+# 	type = "best_fitted",
 
-)
+# )
 
-	# unpack
-	sim_output, sim_params, sim_hyper = unpack(est_output)
+# 	# unpack
+# 	sim_output, sim_params, sim_hyper = unpack(est_output)
 
-	# take in a sim_param struct and run the simulation
-	Random.seed!(simulation_seed)	
+# 	# take in a sim_param struct and run the simulation
+# 	Random.seed!(simulation_seed)	
 	
-	# simulate!
-	covariate_df = DataFrame(sim_params.covariate_mat, sim_params.covariate_mat_headers)
+# 	# simulate!
+# 	covariate_df = DataFrame(sim_params.covariate_mat, sim_params.covariate_mat_headers)
 
-	model_params = get_model_params(
-        est_output;
-        type = type
-    )
-	states, observations = simulate(;
-		model_params = model_params,
-		covariate_df = covariate_df,
-		covariate_tup = sim_params.sim_hyper.covariate_tup,
-		T = T
-	)
+# 	model_params = get_model_params(
+#         est_output;
+#         type = type
+#     )
+# 	states, observations = simulate(;
+# 		model_params = model_params,
+# 		covariate_df = covariate_df,
+# 		covariate_tup = sim_params.sim_hyper.covariate_tup,
+# 		T = T
+# 	)
 
-		# assign all vars to struct now
-	sim_output = SimulationOutput(
-		sim_params = sim_params,
-		simulation_seed = simulation_seed, 
+# 		# assign all vars to struct now
+# 	sim_output = SimulationOutput(
+# 		sim_params = sim_params,
+# 		simulation_seed = simulation_seed, 
 		
-		states = states,
-		observations = observations
-	)
+# 		states = states,
+# 		observations = observations
+# 	)
 
-	return sim_output
+# 	return sim_output
 	
+# end
+
+# # new
+# _symptom_time(mat) = size(mat, 1) ≤ size(mat, 2) ? mat : permutedims(mat)
+
+# function gaussian_means_by_symptom_time(obs)
+#     # Supports either Vector{Matrix} (each: individuals × time) per symptom,
+#     # or a 3D Array (individuals × time × symptoms)
+#     if obs isa AbstractVector{<:AbstractMatrix}
+#         S = length(obs)
+#         T = size(obs[1], 2)
+#         M = Array{Float64}(undef, S, T)
+#         @inbounds for s in 1:S, t in 1:T
+#             M[s, t] = mean(obs[s][:, t])
+#         end
+#         return M
+#     elseif ndims(obs) == 3
+#         N, T, S = size(obs)
+#         M = Array{Float64}(undef, S, T)
+#         @inbounds for s in 1:S, t in 1:T
+#             M[s, t] = mean(@view obs[:, t, s])
+#         end
+#         return M
+#     else
+#         error("Unsupported gaussian_observations container: $(typeof(obs))")
+#     end
+# end
+
+# function _subplot_titles(S, base)
+#     [string(base, " (symptom ", s, ")") for s in 1:S]
+# end
+
+# # --- plotting --------------------------------------------------------------
+
+# function create_bernoulli_proportion_plot2(estimated_props, true_props; symptom_names::Union{Nothing,Vector}=nothing)
+#     est = _symptom_time(estimated_props)
+#     tru = _symptom_time(true_props)
+#     S, T = size(est)
+#     titles = isnothing(symptom_names) ? _subplot_titles(S, "Bernoulli proportion") :
+#              [string("Bernoulli proportion — ", n) for n in symptom_names]
+
+#     plt = make_subplots(rows=S, cols=1; shared_xaxes=true, vertical_spacing=0.06, subplot_titles=titles)
+
+#     xs = collect(1:T)
+#     for s in 1:S
+#         add_trace!(plt, scatter(x=xs, y=vec(tru[s, :]), mode="lines+markers", name=(s==1 ? "True" : "True (s$s)")); row=s, col=1)
+#         add_trace!(plt, scatter(x=xs, y=vec(est[s, :]), mode="lines+markers", name=(s==1 ? "Estimated" : "Estimated (s$s)")); row=s, col=1)
+#         relayout!(plt, Dict("yaxis$(s)_title_text" => "prop", "xaxis$(s)_title_text" => (s==S ? "time" : "")))
+#     end
+#     relayout!(plt, title="Observed vs Estimated Bernoulli Proportions", legend_title_text="Series")
+#     return plt
+# end
+
+# function create_gaussian_mean_plot(estimated_gauss, true_gauss; symptom_names::Union{Nothing,Vector}=nothing)
+#     estM = _gaussian_means_by_symptom_time(estimated_gauss)  # S × T means
+#     truM = _gaussian_means_by_symptom_time(true_gauss)       # S × T means
+#     S, T = size(estM)
+#     titles = isnothing(symptom_names) ? _subplot_titles(S, "Gaussian mean") :
+#              [string("Gaussian mean — ", n) for n in symptom_names]
+
+#     plt = make_subplots(rows=S, cols=1; shared_xaxes=true, vertical_spacing=0.06, subplot_titles=titles)
+
+#     xs = collect(1:T)
+#     for s in 1:S
+#         add_trace!(plt, scatter(x=xs, y=vec(truM[s, :]), mode="lines+markers", name=(s==1 ? "True mean" : "True mean (s$s)")); row=s, col=1)
+#         add_trace!(plt, scatter(x=xs, y=vec(estM[s, :]), mode="lines+markers", name=(s==1 ? "Estimated mean" : "Estimated mean (s$s)")); row=s, col=1)
+#         relayout!(plt, Dict("yaxis$(s)_title_text" => "mean", "xaxis$(s)_title_text" => (s==S ? "time" : "")))
+#     end
+#     relayout!(plt, title="Observed vs Estimated Gaussian Means", legend_title_text="Series")
+#     return plt
+# end
+
+# # --- main ------------------------------------------------------------------
+
+# function compare_estimation_2_data(
+#     est_output::EstimationOutput;
+#     simulation_seed = 1,
+#     T = 5,
+#     type = "best_fitted",
+#     observation_type = "bernoulli",
+#     symptom_names::Union{Nothing,Vector}=nothing
+# )
+#     estimated_sim_output = run_simulation_from_estimation(
+#         est_output;
+#         simulation_seed = simulation_seed,
+#         T = T,
+#         type = type
+#     )
+
+#     if observation_type == "bernoulli"
+#         # compare Bernoulli observations via proportions
+#         estimated_props = get_binary_proportions(estimated_sim_output.observations.bernoulli_observations)
+#         true_props      = get_binary_proportions(est_output.sim_output.observations.bernoulli_observations)
+
+#         fig = create_bernoulli_proportion_plot2(estimated_props, true_props; symptom_names = symptom_names)
+
+#     elseif observation_type == "gaussian"
+#         # compare Gaussian observations via per-time means (one subplot per symptom)
+#         est_gauss  = estimated_sim_output.observations.gaussian_observations
+#         true_gauss = est_output.sim_output.observations.gaussian_observations
+
+#         fig = create_gaussian_mean_plot(est_gauss, true_gauss; symptom_names=symptom_names)
+
+#     else
+#         error("Unknown observation type: $observation_type")
+#     end
+
+#     display(fig)
+#     return estimated_sim_output, fig
+# end
+
+function run_simulation_from_estimation(
+    est_output::EstimationOutput;
+    simulation_seed::Integer = 1,
+    T::Integer = 5,
+    type::AbstractString = "best_fitted",
+)
+    # unpack (keep names explicit for clarity)
+    sim_output, sim_params, sim_hyper = unpack(est_output)
+
+    # seed for reproducibility
+    Random.seed!(simulation_seed)
+
+    # covariates to DataFrame (assumes headers align with columns)
+    covariate_df = DataFrame(sim_params.covariate_mat, sim_params.covariate_mat_headers)
+
+    # pull model params from estimation
+    model_params = get_model_params(est_output; type = type)
+
+    # simulate!
+    states, observations = simulate(
+        ; model_params = model_params,
+          covariate_df = covariate_df,
+          covariate_tup = sim_params.sim_hyper.covariate_tup, # uses sim_params' hyper
+          T = T
+    )
+
+    # package results
+    return SimulationOutput(
+        sim_params = sim_params,
+        simulation_seed = simulation_seed,
+        states = states,
+        observations = observations,
+    )
 end
 
-# new
-_symptom_time(mat) = size(mat, 1) ≤ size(mat, 2) ? mat : permutedims(mat)
+# --- helpers -----------------------------------------------------------------
 
+# Ensure matrices are S × T (symptom × time)
+_symptom_time(mat::AbstractMatrix) = size(mat, 1) ≤ size(mat, 2) ? mat : permutedims(mat)
+
+# Compute per-time means for Gaussian observations across individuals.
+# Accepts either Vector{Matrix} with (N × T) per symptom, or a 3D Array (N × T × S).
 function gaussian_means_by_symptom_time(obs)
-    # Supports either Vector{Matrix} (each: individuals × time) per symptom,
-    # or a 3D Array (individuals × time × symptoms)
     if obs isa AbstractVector{<:AbstractMatrix}
         S = length(obs)
-        T = size(obs[1], 2)
+        @assert S > 0 "Empty gaussian observation vector"
+        N, T = size(obs[1])
+        @assert all(size(M) == (N, T) for M in obs) "All symptom matrices must be N×T"
         M = Array{Float64}(undef, S, T)
         @inbounds for s in 1:S, t in 1:T
             M[s, t] = mean(obs[s][:, t])
@@ -583,59 +731,109 @@ function gaussian_means_by_symptom_time(obs)
     end
 end
 
-function _subplot_titles(S, base)
+_subplot_titles(S::Integer, base::AbstractString) =
     [string(base, " (symptom ", s, ")") for s in 1:S]
+
+# --- plotting ---------------------------------------------------------------
+function get_binary_proportions(obs; skip_missing::Bool = true)
+    proportion(v) = skip_missing ? mean(skipmissing(v)) : mean(v)
+
+    if obs isa AbstractVector{<:AbstractMatrix}
+        S = length(obs)
+        @assert S > 0 "Empty bernoulli observation vector"
+        N, T = size(obs[1])
+        @assert all(size(M) == (N, T) for M in obs) "All symptom matrices must be N×T"
+
+        P = Array{Float64}(undef, S, T)
+        @inbounds for s in 1:S, t in 1:T
+            P[s, t] = proportion(@view obs[s][:, t])
+        end
+        return P
+
+    elseif ndims(obs) == 3
+        N, T, S = size(obs)
+        P = Array{Float64}(undef, S, T)
+        @inbounds for s in 1:S, t in 1:T
+            P[s, t] = proportion(@view obs[:, t, s])
+        end
+        return P
+
+    else
+        error("Unsupported bernoulli_observations container: $(typeof(obs))")
+    end
 end
 
-# --- plotting --------------------------------------------------------------
-
-function create_bernoulli_proportion_plot2(estimated_props, true_props; symptom_names::Union{Nothing,Vector}=nothing)
+function create_bernoulli_proportion_plot2(
+    estimated_props::AbstractMatrix,
+    true_props::AbstractMatrix;
+    symptom_names::Union{Nothing,Vector{<:AbstractString}} = nothing
+)
     est = _symptom_time(estimated_props)
     tru = _symptom_time(true_props)
+    @assert size(est) == size(tru) "Estimated and true proportion arrays must have same size"
     S, T = size(est)
+
     titles = isnothing(symptom_names) ? _subplot_titles(S, "Bernoulli proportion") :
              [string("Bernoulli proportion — ", n) for n in symptom_names]
+	titles = reshape([string(t) for t in titles], S, 1)
 
     plt = make_subplots(rows=S, cols=1; shared_xaxes=true, vertical_spacing=0.06, subplot_titles=titles)
-
     xs = collect(1:T)
+
     for s in 1:S
-        add_trace!(plt, scatter(x=xs, y=vec(tru[s, :]), mode="lines+markers", name=(s==1 ? "True" : "True (s$s)")); row=s, col=1)
-        add_trace!(plt, scatter(x=xs, y=vec(est[s, :]), mode="lines+markers", name=(s==1 ? "Estimated" : "Estimated (s$s)")); row=s, col=1)
-        relayout!(plt, Dict("yaxis$(s)_title_text" => "prop", "xaxis$(s)_title_text" => (s==S ? "time" : "")))
+        add_trace!(plt, scatter(x=xs, y=vec(tru[s, :]), mode="lines+markers", name=(s==1 ? "True" : "True ($(titles[s]))")); row=s, col=1)
+        add_trace!(plt, scatter(x=xs, y=vec(est[s, :]), mode="lines+markers", name=(s==1 ? "Estimated" : "Estimated ($(titles[s]))")); row=s, col=1)
+		relayout!(plt;
+			Symbol("yaxis$(s)") => attr(title = "Percentage Frequency"),
+			Symbol("xaxis$(s)") => attr(title = (s == S ? "time" : ""))  # only bottom row gets x-title
+		)
     end
-    relayout!(plt, title="Observed vs Estimated Bernoulli Proportions", legend_title_text="Series")
+
+    relayout!(plt, title="Observed vs Estimated Bernoulli Proportions",
+                   legend_title_text="Series")
     return plt
 end
 
-function create_gaussian_mean_plot(estimated_gauss, true_gauss; symptom_names::Union{Nothing,Vector}=nothing)
-    estM = _gaussian_means_by_symptom_time(estimated_gauss)  # S × T means
-    truM = _gaussian_means_by_symptom_time(true_gauss)       # S × T means
+function create_gaussian_mean_plot(
+    estimated_gauss,
+    true_gauss;
+    symptom_names::Union{Nothing,Vector{<:AbstractString}} = nothing
+)
+    estM = gaussian_means_by_symptom_time(estimated_gauss)  # S × T
+    truM = gaussian_means_by_symptom_time(true_gauss)       # S × T
+    @assert size(estM) == size(truM) "Estimated and true Gaussian mean arrays must have same size"
     S, T = size(estM)
+
     titles = isnothing(symptom_names) ? _subplot_titles(S, "Gaussian mean") :
              [string("Gaussian mean — ", n) for n in symptom_names]
+	titles = reshape([string(t) for t in titles], S, 1)
 
     plt = make_subplots(rows=S, cols=1; shared_xaxes=true, vertical_spacing=0.06, subplot_titles=titles)
-
     xs = collect(1:T)
+
     for s in 1:S
         add_trace!(plt, scatter(x=xs, y=vec(truM[s, :]), mode="lines+markers", name=(s==1 ? "True mean" : "True mean (s$s)")); row=s, col=1)
         add_trace!(plt, scatter(x=xs, y=vec(estM[s, :]), mode="lines+markers", name=(s==1 ? "Estimated mean" : "Estimated mean (s$s)")); row=s, col=1)
-        relayout!(plt, Dict("yaxis$(s)_title_text" => "mean", "xaxis$(s)_title_text" => (s==S ? "time" : "")))
+		relayout!(plt;
+			Symbol("yaxis$(s)") => attr(title = "Mean"),
+			Symbol("xaxis$(s)") => attr(title = (s == S ? "time" : ""))  # only bottom row gets x-title
+		)
     end
-    relayout!(plt, title="Observed vs Estimated Gaussian Means", legend_title_text="Series")
+
+    relayout!(plt, title="Observed vs Estimated Gaussian Means",
+                   legend_title_text="Series")
     return plt
 end
 
-# --- main ------------------------------------------------------------------
+# --- main -------------------------------------------------------------------
 
 function compare_estimation_2_data(
     est_output::EstimationOutput;
-    simulation_seed = 1,
-    T = 5,
-    type = "best_fitted",
-    observation_type = "bernoulli",
-    symptom_names::Union{Nothing,Vector}=nothing
+    simulation_seed::Integer = 1,
+    T::Integer = 5,
+    type::AbstractString = "best_fitted",
+    observation_type::AbstractString = "bernoulli",
+    symptom_names::Union{Nothing,Vector{<:AbstractString}} = nothing
 )
     estimated_sim_output = run_simulation_from_estimation(
         est_output;
@@ -644,25 +842,21 @@ function compare_estimation_2_data(
         type = type
     )
 
-	print("hi")
-    if observation_type == "bernoulli"
-        # compare Bernoulli observations via proportions
+    fig = if observation_type == "bernoulli"
+        # proportions over time (S × T expected after _symptom_time)
         estimated_props = get_binary_proportions(estimated_sim_output.observations.bernoulli_observations)
         true_props      = get_binary_proportions(est_output.sim_output.observations.bernoulli_observations)
-
-        fig = create_bernoulli_proportion_plot2(estimated_props, true_props; symptom_names = symptom_names)
+        create_bernoulli_proportion_plot2(estimated_props, true_props; symptom_names = symptom_names)
 
     elseif observation_type == "gaussian"
-        # compare Gaussian observations via per-time means (one subplot per symptom)
+        # per-time means (one subplot per symptom)
         est_gauss  = estimated_sim_output.observations.gaussian_observations
         true_gauss = est_output.sim_output.observations.gaussian_observations
-
-        fig = create_gaussian_mean_plot(est_gauss, true_gauss; symptom_names=symptom_names)
+        create_gaussian_mean_plot(est_gauss, true_gauss; symptom_names = symptom_names)
 
     else
-        error("Unknown observation type: $observation_type")
+        error("Unknown observation type: $observation_type (use \"bernoulli\" or \"gaussian\")")
     end
 
-    display(fig)
-    return estimated_sim_output, fig
+    return fig
 end
