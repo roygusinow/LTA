@@ -1,4 +1,4 @@
-using PlotlyJS
+using PlotlyJS, ColorSchemes
 
 cscale = [(0, "white"), (1, "red")]
 
@@ -359,6 +359,55 @@ function compare_gaussian_pdf(
     end
 
 	return fig
+end
+
+function dynamic_stacked_subplots(x, all_series, all_labels)
+    n = length(all_series)
+    fig = make_subplots(rows = n, cols = 1, shared_xaxes = true, vertical_spacing = 0.03)
+    palette = ColorScheme(get(ColorSchemes.darkrainbow, range(0.0, 1.0, length=length(all_labels[1]))))
+	# palette = ["#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]
+    for i in 1:n
+        ys = all_series[i]
+        labels = all_labels[i]
+		idx = 1
+        for (y, lbl) in zip(ys, labels)
+            add_trace!(fig, bar(x = x, y = y, name = lbl, marker_color = palette[idx]), row = i, col = 1)
+			idx += 1
+        end
+    end
+    relayout!(fig, barmode = "stack", title_text = "")
+
+	relayout!(fig; Symbol("yaxis_title_text") => "State 1")
+	for i in 1:n
+		relayout!(fig; Symbol("yaxis$(i)_title_text") => "State $(i)")
+	end
+    fig
+end
+
+function plot_ordinal_probs(
+    est_output::EstimationOutput;
+    type = "best_fitted",
+)
+	sim_output, sim_params, sim_hyper = unpack(est_output)
+    model_params = get_model_params(est_output; type = type)
+
+    ordinal_probs = LTA.convert_ordinal_2_true(model_params.emissions.beta_ordinal)
+
+    x = string.(keys(ordinal_probs))
+    states_vec_mat = zeros(sim_hyper.n_states, length(sim_hyper.n_obs_tup.ordinal), maximum(sim_hyper.n_obs_tup.ordinal))
+    for sympt_mat_i in 1:length(ordinal_probs)
+        for state_i in 1:size(ordinal_probs[sympt_mat_i], 1)
+            row = ordinal_probs[sympt_mat_i][state_i, :]
+            states_vec_mat[state_i, sympt_mat_i, 1:length(row)] = row
+        end
+    end
+
+    all_series = [[states_vec_mat[i, :, level_i] for level_i in 1:maximum(sim_hyper.n_obs_tup.ordinal)] for i in 1:sim_hyper.n_states]
+    all_labels = [string.(collect(1:maximum(sim_hyper.n_obs_tup.ordinal))) for _ in 1:sim_hyper.n_states]
+
+    fig = dynamic_stacked_subplots(x, all_series, all_labels)
+
+    return fig
 end
 
 # rho

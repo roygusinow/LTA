@@ -115,6 +115,13 @@ function gen_model_params(; seed, n_states, covariate_tup, n_obs_tup, ref_state)
 			beta_gaussian = gen_beta_gaussion_emission(; 
 				seed = seed + 6, n_states = n_states, n_obs_cont = nm)
 			emissions = (; emissions..., beta_gaussian = beta_gaussian)
+		elseif dist == :ordinal	
+			nm = length(n_obs_tup[:ordinal])
+			@assert nm > 0 "No ordinal symptoms specified!";
+			# currently stable n_levels
+			beta_ordinal= gen_beta_ordinal_emission(; 
+				seed = seed + 6, n_states = n_states, n_levels = n_obs_tup[:ordinal])
+			emissions = (; emissions..., beta_ordinal = beta_ordinal)
 		end
 	end
 	model_params = (; model_params..., emissions = emissions)
@@ -226,6 +233,67 @@ function convert_gauss_2_form(x::NamedTuple)
 	return out
 end
 
+function softplus(x)
+	return log(1 + exp(x))
+end
+
+function convert_ordinal_spacings_2_intercepts(x::Vector{<:Real})
+
+	ordinal_intercepts = Vector{eltype(x)}(undef, length(x))
+
+	ordinal_intercepts[1] = x[1] # use the first value as base
+	for i in 2:length(x)
+		ordinal_intercepts[i] = ordinal_intercepts[i - 1] + softplus(x[i])
+	end
+	return ordinal_intercepts
+end
+
+function convert_ordinal_spacings_2_probs(x::Vector{<:Real})
+
+	# first, convert spacings to intercepts to ensure positivity and ordering
+	# print("hit")
+	ordinal_intercepts = convert_ordinal_spacings_2_intercepts(x)
+	# ordinal_intercepts = cumsum(x)
+	# ordinal_intercepts = x
+	
+	# convert ordinal intercepts to probabilities
+	out = Vector{eltype(ordinal_intercepts)}(undef, length(ordinal_intercepts) + 1)
+	out[1] = 1 / (1 + exp(-ordinal_intercepts[1]))
+	for i in 1:length(ordinal_intercepts)-1
+		out[i + 1] = (1 / (1 + exp(-ordinal_intercepts[i + 1]))) - (1 / (1 + exp(-ordinal_intercepts[i])))
+	end
+	out[end] = 1 - (1 / (1 + exp(-ordinal_intercepts[end])))
+
+	return out
+end
+
+function convert_ordinal_2_true(x::NamedTuple)
+
+	# convert ordinal intercepts to probabilities of every state
+	true_ordinal_probs = NamedTuple()
+	for i in 1:length(x)
+
+		# could be better formulated...
+		true_ordinal_probs = (; true_ordinal_probs..., 
+			keys(x)[i] => collect(transpose(hcat(
+				[convert_ordinal_spacings_2_probs(x[i][state, :]) for state in 1:size(x[i], 1)]...))))
+	end
+
+	return true_ordinal_probs
+end
+
+function gen_beta_ordinal_emission(; 
+	seed, n_states, n_levels::Vector{Int64})
+
+	beta_ordinal = NamedTuple()
+	for i in 1:length(n_levels)
+		beta_ordinal = (; beta_ordinal..., 
+			Symbol("symptom_" * string(i)) => rand(MersenneTwister(seed + i), Uniform(-2, 2), (n_states, n_levels[i] - 1)))
+	end
+
+	return beta_ordinal
+end
+
 function multinom_reg(
 	beta_mat::Matrix{<:Real},
 	# x_vec::Vector{<:Union{Missing, Float64}},
@@ -321,6 +389,37 @@ function sample_gaussian(
 	return gaussian_observations
 end
 
+function sample_single_ordinal(
+	state::Int64;
+	true_ordinal_probs::NamedTuple
+	)
+
+	# draw observations from state
+	si = length(true_ordinal_probs)
+	obs_vec = Vector{Int64}(undef, si)
+
+	# standard_dev = 0.1
+	for symptom_ind in 1:si
+		prob_vec = true_ordinal_probs[symptom_ind][state, :]
+		obs_vec[symptom_ind] = rand(Distributions.Categorical(prob_vec))
+	end
+
+	return obs_vec
+end
+
+function sample_ordinal(
+	states::Vector{Int64}; 
+	true_ordinal_probs::NamedTuple)
+
+	T = length(states)
+	ordinal_observations = Matrix{Int64}(undef, T, length(true_ordinal_probs))
+	for time in 1:T
+		ordinal_observations[time, :] = sample_single_ordinal(states[time]; true_ordinal_probs = true_ordinal_probs)
+	end
+
+	return ordinal_observations
+end
+
 function draw_cat_prob(prob_vec::Vector{Float64})
     # Check if exactly one entry is NaN and all others are zero
     if count(isnan, prob_vec) == 1 && all(iszero, prob_vec[.!isnan.(prob_vec)])
@@ -332,35 +431,6 @@ function draw_cat_prob(prob_vec::Vector{Float64})
     end
 
     return rand(Distributions.Categorical(prob_vec))
-end
-
-# simulation
-function sampleHMM(
-	initial_vec::Vector{Float64},
-	transition_mat::Matrix{Float64},
-	emission_mat::Matrix{Float64},
-	emission_mean_std::Array{Float64},
-	T::Int64)
-
-	#Initialize states and observations
-	state = Vector{Int64}(undef, T)
-	observation = Matrix{Float64}(undef, T, size(emission_mat, 2))
-	observation_cont = Matrix{Float64}(undef, T, size(emission_mean_std, 2))
-
-	#Sample initial s from initial distribution
-	state[1] = draw_cat_prob(initial_vec)
-	observation[1, :] = draw_observation_vec(state[1], emission_mat)
-	observation_cont[1, :]= draw_observation_norm_vec(state[1], emission_mean_std)
-
-	#Loop over Time Index
-	for time in 2:T
-		state[time] = draw_cat_prob(transition_mat[state[time-1], :])
-		observation[time, :]= draw_observation_vec(state[time], emission_mat)
-		observation_cont[time, :]= draw_observation_norm_vec(state[time], emission_mean_std)
-	end
-
-	return state, observation, observation_cont
-	# return state, observation
 end
 
 # simulation
@@ -410,6 +480,10 @@ function simulate_HMM_sample(;
 			true_gaussian_emission = convert_gauss_2_true(model_params.emissions.beta_gaussian)
 			gaussian_observations = sample_gaussian(state; true_gaussian_emission = true_gaussian_emission)
 			observations = (; observations..., gaussian_observations = gaussian_observations)
+		elseif dist == :beta_ordinal
+			true_ordinal_probs = convert_ordinal_2_true(model_params.emissions.beta_ordinal)
+			ordinal_observations = sample_ordinal(state; true_ordinal_probs = true_ordinal_probs)
+			observations = (; observations..., ordinal_observations = ordinal_observations)
 		end
 	end
 
@@ -464,11 +538,14 @@ function simulate(;
 	# observations
 	bernoulli_observations = Array{Int64}(undef, N, T, 0)
 	gaussian_observations = Array{Float64}(undef, N, T, 0)
+	ordinal_observations = Array{Int64}(undef, N, T, 0)
 	for dist in keys(model_params.emissions)
 		if dist == :beta_bernoulli
 			bernoulli_observations = Array{Int64}(undef, N, T, size(model_params.emissions.beta_bernoulli, 3))
 		elseif dist == :beta_gaussian
 			gaussian_observations = Array{Float64}(undef, N, T, size(model_params.emissions.beta_gaussian.means, 2))
+		elseif dist == :beta_ordinal
+			ordinal_observations = Array{Int64}(undef, N, T, length(model_params.emissions.beta_ordinal))
 		end
 	end
 
@@ -487,6 +564,8 @@ function simulate(;
 				bernoulli_observations[i, :, :] = observation.bernoulli_observations
 			elseif dist == :beta_gaussian
 				gaussian_observations[i, :, :] = observation.gaussian_observations
+			elseif dist == :beta_ordinal
+				ordinal_observations[i, :, :] = observation.ordinal_observations
 			end
 		end
 	end
@@ -498,6 +577,8 @@ function simulate(;
 			observations = (; observations..., bernoulli_observations = bernoulli_observations)
 		elseif dist == :beta_gaussian
 			observations = (; observations..., gaussian_observations = gaussian_observations)
+		elseif dist == :beta_ordinal
+			observations = (; observations..., ordinal_observations = ordinal_observations)
 		end
 	end
 
