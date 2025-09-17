@@ -56,6 +56,32 @@ function build_tensor_designation(df::DataFrame,
                                   visit_prefixes::Vector{String},
                                   time_labels::Vector{String};
                                   Ttype::Type{T}=Int) where {T}
+
+    # --- Pre-flight: assert required columns exist ---
+    missing_cols = Symbol[]
+
+    # If "acute" is used, require acute.<sym> columns
+    if "acute" in time_labels
+        for sym in symptom_names
+            col = Symbol("acute." * sym)
+            hasproperty(df, col) || push!(missing_cols, col)
+        end
+    end
+
+    # For non-acute labels, require <prefix>.visit_group and <prefix>.<sym> columns
+    if any(lbl -> lbl != "acute", time_labels)
+        for prefix in visit_prefixes
+            grp_col = Symbol(prefix * ".visit_group")
+            hasproperty(df, grp_col) || push!(missing_cols, grp_col)
+            for sym in symptom_names
+                sym_col = Symbol(prefix * "." * sym)
+                hasproperty(df, sym_col) || push!(missing_cols, sym_col)
+            end
+        end
+    end
+
+    @assert isempty(missing_cols) "Missing columns: $(join(string.(missing_cols)))"
+    
     N = nrow(df)
     Tn = length(time_labels)
     S = length(symptom_names)
@@ -105,16 +131,15 @@ end
 function build_covariates(df::DataFrame,
                           covariate_names::Vector{String})
 
-    patient_df = df[:, covariate_names]
-    # insertcols!(patient_df, 1, :Intercept => ones(nrow(patient_df)))
-    # insertcols!(patient_df, 1, :x1 => ones(nrow(patient_df))) # need to change for all sims..
+    if length(covariate_names) != 0 
+        covariate_df = df[:, covariate_names]
 
-    # convert all columns to Float64
-    # for col in names(patient_df)
-    #     patient_df[!, col] = Float64.(patient_df[!, col])
-    # end
-
-    return patient_df
+        @assert ncol(covariate_df) == length(covariate_names) "Some covariate names not found in DataFrame."
+    else
+        covariate_df = DataFrame("Intercept" => ones(nrow(df)))
+    end
+    
+    return covariate_df
 end
 
 # ——— Top‐level preprocess function ———
@@ -125,23 +150,29 @@ function preprocess(df::DataFrame;
                     visit_prefixes::Vector{String},
                     time_labels::Vector{String})
 
+    
+    observations = NamedTuple()
+
     # Binary symptoms → Int tensor (with -1 for missing)
-    bernoulli_observations  = build_tensor_designation(df, binary_syms,
-                                        visit_prefixes, time_labels;
-                                        Ttype = Int)
+    if length(binary_syms) != 0
+        bernoulli_observations  = build_tensor_designation(df, binary_syms,
+                                    visit_prefixes, time_labels;
+                                    Ttype = Int)
+        observations = (; observations..., bernoulli_observations = bernoulli_observations)
+    end
 
     # Continuous symptoms → Float64 tensor (with -1.0 for missing)
-    gaussian_observations = build_tensor_designation(df, cont_syms,
-                                        visit_prefixes, time_labels;
-                                        Ttype = Float64)
+    if length(cont_syms) != 0
+        gaussian_observations = build_tensor_designation(df, cont_syms,
+                                            visit_prefixes, time_labels;
+                                            Ttype = Float64)
+        observations = (; observations..., gaussian_observations = gaussian_observations)
+    end
 
     # Covariates → matrix
     pat_cov  = build_covariates(df, covariates)
 
-    return (
-      bernoulli_observations = bernoulli_observations,
-      gaussian_observations   = gaussian_observations
-    ), pat_cov
+    return observations, pat_cov
 end
 
 
@@ -234,6 +265,10 @@ function create_data_sim_params(
 	return sim_output
 end
 
+# string normalisers
+to_strings(x::Vector{String}) = x
+to_strings(x::Vector{Any}) = length(x) == 0 ? String[] : throw(ArgumentError("$name must be strings (non-empty)"))
+
 function create_sim_mod_data(
     tab;
     kwargs...
@@ -242,9 +277,9 @@ function create_sim_mod_data(
     df = DataFrame(tab)
 
     observations, covariate_df = preprocess(df;
-        covariates      = kwargs[:covs],
-        binary_syms     = kwargs[:bins],
-        cont_syms       = kwargs[:conts],
+        covariates      = to_strings(kwargs[:covs]),
+        binary_syms     = to_strings(kwargs[:bins]),
+        cont_syms       = to_strings(kwargs[:conts]),
         visit_prefixes  = kwargs[:visits],
         time_labels     = kwargs[:labels],
     )
