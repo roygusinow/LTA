@@ -1,5 +1,7 @@
 # Latent Transition Analysis for Longitudinal Studies of Post-Acute Infection Syndromes: A Multinational Investigation of Post-COVID-19 Condition
 
+[![DOI](https://zenodo.org/badge/1038032161.svg)](https://doi.org/10.5281/zenodo.17787060)
+
 <p align="center">
   <img src="assets/lta_diagram.png" alt="LTA state transition diagram" width="700">
 </p>
